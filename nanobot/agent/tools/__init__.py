@@ -11,6 +11,7 @@ from nanobot.agent.tools.schema import (
     StringSchema,
     tool_parameters_schema,
 )
+from nanobot.agent.tools.pin import PinTool
 
 __all__ = [
     "Schema",
@@ -22,6 +23,7 @@ __all__ = [
     "StringSchema",
     "Tool",
     "ToolRegistry",
+    "PinTool",
     "tool_parameters",
     "tool_parameters_schema",
 ]

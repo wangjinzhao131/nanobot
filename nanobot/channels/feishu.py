@@ -594,6 +594,84 @@ class FeishuChannel(BaseChannel):
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._remove_reaction_sync, message_id, reaction_id)
 
+    # ── Pin/Unpin message operations ────────────────────────────────────────────
+
+    def _pin_message_sync(self, message_id: str) -> bool:
+        """Sync helper for pinning a message (runs in thread pool)."""
+        from lark_oapi.api.im.v1 import CreatePinRequest, CreatePinRequestBody
+
+        try:
+            request = (
+                CreatePinRequest.builder()
+                .request_body(CreatePinRequestBody.builder().message_id(message_id).build())
+                .build()
+            )
+
+            response = self._client.im.v1.pin.create(request)
+
+            if not response.success():
+                logger.warning(
+                    "Failed to pin message {}: code={}, msg={}",
+                    message_id,
+                    response.code,
+                    response.msg,
+                )
+                return False
+            else:
+                logger.debug("Pinned message {}", message_id)
+                return True
+        except Exception as e:
+            logger.warning("Error pinning message {}: {}", message_id, e)
+            return False
+
+    async def _pin_message(self, message_id: str) -> bool:
+        """
+        Pin a message in its chat (non-blocking).
+
+        Requires im:message.pins:write_only permission in Feishu app.
+        """
+        if not self._client:
+            return False
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._pin_message_sync, message_id)
+
+    def _unpin_message_sync(self, message_id: str) -> bool:
+        """Sync helper for unpinning a message (runs in thread pool)."""
+        from lark_oapi.api.im.v1 import DeletePinRequest
+
+        try:
+            request = DeletePinRequest.builder().message_id(message_id).build()
+
+            response = self._client.im.v1.pin.delete(request)
+
+            if not response.success():
+                logger.warning(
+                    "Failed to unpin message {}: code={}, msg={}",
+                    message_id,
+                    response.code,
+                    response.msg,
+                )
+                return False
+            else:
+                logger.debug("Unpinned message {}", message_id)
+                return True
+        except Exception as e:
+            logger.warning("Error unpinning message {}: {}", message_id, e)
+            return False
+
+    async def _unpin_message(self, message_id: str) -> bool:
+        """
+        Unpin a message from its chat (non-blocking).
+
+        Requires im:message.pins:write_only permission in Feishu app.
+        """
+        if not self._client:
+            return False
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._unpin_message_sync, message_id)
+
     # Regex to match markdown tables (header + separator + data rows)
     _TABLE_RE = re.compile(
         r"((?:^[ \t]*\|.+\|[ \t]*\n)(?:^[ \t]*\|[-:\s|]+\|[ \t]*\n)(?:^[ \t]*\|.+\|[ \t]*\n?)+)",
@@ -1318,7 +1396,11 @@ class FeishuChannel(BaseChannel):
                 if buf and buf.card_id and buf.text:
                     buf.sequence += 1
                     await loop.run_in_executor(
-                        None, self._stream_update_text_sync, buf.card_id, buf.text, buf.sequence,
+                        None,
+                        self._stream_update_text_sync,
+                        buf.card_id,
+                        buf.text,
+                        buf.sequence,
                     )
                 return
 
@@ -1405,14 +1487,16 @@ class FeishuChannel(BaseChannel):
                     # Delegate to send_delta so tool hints get the same
                     # throttling (and card creation) as regular text deltas.
                     lines = self.__class__._format_tool_hint_lines(hint).split("\n")
-                    delta = "\n\n" + "\n".join(
-                        f"{self.config.tool_hint_prefix} {ln}" for ln in lines if ln.strip()
-                    ) + "\n\n"
+                    delta = (
+                        "\n\n"
+                        + "\n".join(
+                            f"{self.config.tool_hint_prefix} {ln}" for ln in lines if ln.strip()
+                        )
+                        + "\n\n"
+                    )
                     await self.send_delta(msg.chat_id, delta)
                     return
-                await self._send_tool_hint_card(
-                    receive_id_type, msg.chat_id, hint
-                )
+                await self._send_tool_hint_card(receive_id_type, msg.chat_id, hint)
                 return
 
             # Determine whether the first message should quote the user's message.
