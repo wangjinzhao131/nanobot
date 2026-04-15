@@ -347,13 +347,30 @@ class TestChannelManagerPinRouting:
         ch._pin_message.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_send_once_logs_warning_on_failure(self):
-        ch = _make_channel()
-        ch._pin_message = AsyncMock(return_value=False)
+    async def test_send_once_does_not_raise_for_channel_without_pin_support(self):
+        from nanobot.channels.base import BaseChannel
+
+        class MockChannelWithoutPin(BaseChannel):
+            def __init__(self):
+                self._running = False
+
+            async def start(self):
+                pass
+
+            async def stop(self):
+                pass
+
+            async def send(self, chat_id, content, metadata=None):
+                pass
+
+            async def send_delta(self, chat_id, content, metadata=None):
+                pass
+
+        ch = MockChannelWithoutPin()
 
         msg = OutboundMessage(
-            channel="feishu",
-            chat_id="oc_123",
+            channel="telegram",
+            chat_id="chat_123",
             content="",
             metadata={
                 "_pin": True,
@@ -363,5 +380,3 @@ class TestChannelManagerPinRouting:
         )
 
         await ChannelManager._send_once(ch, msg)
-
-        ch._pin_message.assert_called_once_with("om_001")

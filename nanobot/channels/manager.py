@@ -200,6 +200,9 @@ class ChannelManager:
             if not message_id:
                 logger.warning("Pin operation missing pin_message_id in metadata")
                 return
+            if not hasattr(channel, "_pin_message") or not hasattr(channel, "_unpin_message"):
+                logger.warning("Pin not supported for channel {}", msg.channel)
+                return
             if action == "pin":
                 success = await channel._pin_message(message_id)
             elif action == "unpin":
