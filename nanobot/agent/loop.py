@@ -17,32 +17,29 @@ from nanobot.agent.autocompact import AutoCompact
 from nanobot.agent.context import ContextBuilder
 from nanobot.agent.hook import AgentHook, AgentHookContext, CompositeHook
 from nanobot.agent.memory import Consolidator, Dream
-from nanobot.agent.runner import _MAX_INJECTIONS_PER_TURN, AgentRunner, AgentRunSpec
-from nanobot.agent.skills import BUILTIN_SKILLS_DIR
+from nanobot.agent.runner import _MAX_INJECTIONS_PER_TURN, AgentRunSpec, AgentRunner
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
+from nanobot.agent.skills import BUILTIN_SKILLS_DIR
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.notebook import NotebookEditTool
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.search import GlobTool, GrepTool
 from nanobot.agent.tools.shell import ExecTool
-from nanobot.agent.tools.self import MyTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
-from nanobot.bus.queue import MessageBus
 from nanobot.command import CommandContext, CommandRouter, register_builtin_commands
+from nanobot.bus.queue import MessageBus
 from nanobot.config.schema import AgentDefaults
 from nanobot.providers.base import LLMProvider
 from nanobot.session.manager import Session, SessionManager
-from nanobot.utils.document import extract_documents
-from nanobot.utils.helpers import image_placeholder_text
-from nanobot.utils.helpers import truncate_text as truncate_text_fn
+from nanobot.utils.helpers import image_placeholder_text, truncate_text as truncate_text_fn
 from nanobot.utils.runtime import EMPTY_FINAL_RESPONSE_MESSAGE
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import ChannelsConfig, ExecToolConfig, ToolsConfig, WebToolsConfig
+    from nanobot.config.schema import ChannelsConfig, ExecToolConfig, WebToolsConfig
     from nanobot.cron.service import CronService
 
 
@@ -90,9 +87,6 @@ class _LoopHook(AgentHook):
         if self._on_stream_end:
             await self._on_stream_end(resuming=resuming)
         self._stream_buf = ""
-
-    async def before_iteration(self, context: AgentHookContext) -> None:
-        self._loop._current_iteration = context.iteration
 
     async def before_execute_tools(self, context: AgentHookContext) -> None:
         if self._on_progress:
@@ -160,11 +154,9 @@ class AgentLoop:
         hooks: list[AgentHook] | None = None,
         unified_session: bool = False,
         disabled_skills: list[str] | None = None,
-        tools_config: ToolsConfig | None = None,
     ):
-        from nanobot.config.schema import ExecToolConfig, ToolsConfig, WebToolsConfig
+        from nanobot.config.schema import ExecToolConfig, WebToolsConfig
 
-        _tc = tools_config or ToolsConfig()
         defaults = AgentDefaults()
         self.bus = bus
         self.channels_config = channels_config
@@ -232,7 +224,7 @@ class AgentLoop:
             provider=provider,
             model=self.model,
             sessions=self.sessions,
-            context_window_tokens=self.context_window_tokens,
+            context_window_tokens=context_window_tokens,
             build_messages=self.context.build_messages,
             get_tool_definitions=self.tools.get_definitions,
             max_completion_tokens=provider.generation.max_tokens,
@@ -248,10 +240,6 @@ class AgentLoop:
             model=self.model,
         )
         self._register_default_tools()
-        if _tc.my.enable:
-            self.tools.register(MyTool(loop=self, modify_allowed=_tc.my.allow_set))
-        self._runtime_vars: dict[str, Any] = {}
-        self._current_iteration: int = 0
         self.commands = CommandRouter()
         register_builtin_commands(self.commands)
 
@@ -318,7 +306,7 @@ class AgentLoop:
 
     def _set_tool_context(self, channel: str, chat_id: str, message_id: str | None = None) -> None:
         """Update context for all tools that need routing info."""
-        for name in ("message", "spawn", "cron", "my"):
+        for name in ("message", "spawn", "cron"):
             if tool := self.tools.get(name):
                 if hasattr(tool, "set_context"):
                     tool.set_context(channel, chat_id, *([message_id] if name == "message" else []))
@@ -395,12 +383,10 @@ class AgentLoop:
                     pending_msg = pending_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
-                content = pending_msg.content
-                media = pending_msg.media if pending_msg.media else None
-                if media:
-                    content, media = extract_documents(content, media)
-                    media = media or None
-                user_content = self.context._build_user_content(content, media)
+                user_content = self.context._build_user_content(
+                    pending_msg.content,
+                    pending_msg.media if pending_msg.media else None,
+                )
                 runtime_ctx = self.context._build_runtime_context(
                     pending_msg.channel,
                     pending_msg.chat_id,
@@ -434,11 +420,6 @@ class AgentLoop:
         self._last_usage = result.usage
         if result.stop_reason == "max_iterations":
             logger.warning("Max iterations ({}) reached", self.max_iterations)
-            # Push final content through stream so streaming channels (e.g. Feishu)
-            # update the card instead of leaving it empty.
-            if on_stream and on_stream_end:
-                await on_stream(result.final_content or "")
-                await on_stream_end(resuming=False)
         elif result.stop_reason == "error":
             logger.error("LLM returned error: {}", (result.final_content or "")[:200])
         return result.final_content, result.tools_used, result.messages, result.stop_reason, result.had_injections
@@ -671,12 +652,6 @@ class AgentLoop:
                 content=final_content or "Background task completed.",
             )
 
-        # Extract document text from media at the processing boundary so all
-        # channels benefit without format-specific logic in ContextBuilder.
-        if msg.media:
-            new_content, image_only = extract_documents(msg.content, msg.media)
-            msg = dataclasses.replace(msg, content=new_content, media=image_only)
-
         preview = msg.content[:80] + "..." if len(msg.content) > 80 else msg.content
         logger.info("Processing message from {}:{}: {}", msg.channel, msg.sender_id, preview)
 
@@ -868,7 +843,80 @@ class AgentLoop:
                     entry["content"] = filtered
             entry.setdefault("timestamp", datetime.now().isoformat())
             session.messages.append(entry)
+
+        # Persist cross-channel message tool calls into target sessions so
+        # that the target session has context when the user replies there.
+        self._persist_cross_channel_calls(session, messages[skip:])
         session.updated_at = datetime.now()
+
+    def _persist_cross_channel_calls(
+        self, source_session: Session, new_messages: list[dict[str, Any]]
+    ) -> None:
+        """Record cross-channel ``message`` tool calls into the target session.
+
+        When session A (e.g. websocket) uses the *message* tool to send to
+        channel B (e.g. feishu), the outbound message is delivered to the user
+        but is not recorded in session B's history.  This causes session B to
+        lose context when the user replies on channel B.
+
+        This method detects such cross-channel sends and appends a lightweight
+        assistant entry to the target session so it has the necessary context.
+
+        Improvements over the initial implementation:
+        - Use ``sessions.get_or_create()`` instead of accessing ``_cache``
+          directly, so sessions persisted on disk but evicted from memory are
+          still found.
+        - Persist ``media`` file paths alongside ``content`` so the target
+          session retains full context about attachments.
+        - Record ``_source_session`` to make the provenance traceable.
+        """
+        from datetime import datetime
+
+        for m in new_messages:
+            if m.get("role") != "assistant":
+                continue
+            tool_calls = m.get("tool_calls") or []
+            for tc in tool_calls:
+                func = tc.get("function", {})
+                if func.get("name") != "message":
+                    continue
+                try:
+                    args = json.loads(func.get("arguments", "{}"))
+                except (json.JSONDecodeError, TypeError):
+                    continue
+
+                target_channel = args.get("channel") or source_session.key.split(":", 1)[0]
+                target_chat_id = args.get("chat_id") or source_session.key.split(":", 1)[-1]
+                target_key = f"{target_channel}:{target_chat_id}"
+
+                if target_key == source_session.key:
+                    continue  # same session, nothing to do
+
+                content = args.get("content", "")
+                media = args.get("media")
+                if not content and not media:
+                    continue
+
+                # Use the public API so disk-persisted sessions are loaded too.
+                target_session = self.sessions.get_or_create(target_key)
+
+                entry: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": content,
+                    "timestamp": datetime.now().isoformat(),
+                    "_cross_channel": True,
+                    "_source_session": source_session.key,
+                }
+                if media:
+                    entry["_media"] = media
+
+                target_session.messages.append(entry)
+                target_session.updated_at = datetime.now()
+                self.sessions.save(target_session)
+                logger.info(
+                    "Cross-channel message persisted: {} -> {}",
+                    source_session.key, target_key,
+                )
 
     def _set_runtime_checkpoint(self, session: Session, payload: dict[str, Any]) -> None:
         """Persist the latest in-flight turn state into session metadata."""
@@ -977,17 +1025,13 @@ class AgentLoop:
         session_key: str = "cli:direct",
         channel: str = "cli",
         chat_id: str = "direct",
-        media: list[str] | None = None,
         on_progress: Callable[[str], Awaitable[None]] | None = None,
         on_stream: Callable[[str], Awaitable[None]] | None = None,
         on_stream_end: Callable[..., Awaitable[None]] | None = None,
     ) -> OutboundMessage | None:
         """Process a message directly and return the outbound payload."""
         await self._connect_mcp()
-        msg = InboundMessage(
-            channel=channel, sender_id="user", chat_id=chat_id,
-            content=content, media=media or [],
-        )
+        msg = InboundMessage(channel=channel, sender_id="user", chat_id=chat_id, content=content)
         return await self._process_message(
             msg,
             session_key=session_key,
