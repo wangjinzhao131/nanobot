@@ -27,6 +27,7 @@ from nanobot.agent.tools.notebook import NotebookEditTool
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.search import GlobTool, GrepTool
 from nanobot.agent.tools.shell import ExecTool
+from nanobot.agent.tools.self import MyTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
@@ -39,7 +40,7 @@ from nanobot.utils.helpers import image_placeholder_text, truncate_text as trunc
 from nanobot.utils.runtime import EMPTY_FINAL_RESPONSE_MESSAGE
 
 if TYPE_CHECKING:
-    from nanobot.config.schema import ChannelsConfig, ExecToolConfig, WebToolsConfig
+    from nanobot.config.schema import ChannelsConfig, ExecToolConfig, ToolsConfig, WebToolsConfig
     from nanobot.cron.service import CronService
 
 
@@ -183,6 +184,7 @@ class AgentLoop:
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
+        self.tools_config = tools_config
         self._start_time = time.time()
         self._last_usage: dict[str, int] = {}
         self._extra_hooks: list[AgentHook] = hooks or []
@@ -241,6 +243,8 @@ class AgentLoop:
             model=self.model,
         )
         self._register_default_tools()
+        if self.tools_config and self.tools_config.my.enable:
+            self.tools.register(MyTool(loop=self, modify_allowed=self.tools_config.my.allow_set))
         self.commands = CommandRouter()
         register_builtin_commands(self.commands)
 
