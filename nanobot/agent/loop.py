@@ -154,8 +154,9 @@ class AgentLoop:
         hooks: list[AgentHook] | None = None,
         unified_session: bool = False,
         disabled_skills: list[str] | None = None,
+        tools_config: "ToolsConfig | None" = None,
     ):
-        from nanobot.config.schema import ExecToolConfig, WebToolsConfig
+        from nanobot.config.schema import ExecToolConfig, ToolsConfig, WebToolsConfig
 
         defaults = AgentDefaults()
         self.bus = bus
