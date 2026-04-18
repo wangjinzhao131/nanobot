@@ -97,8 +97,27 @@ class _LoopHook(AgentHook):
                 )
                 if thought:
                     await self._on_progress(thought)
-            tool_hint = self._loop._strip_think(self._loop._tool_hint(context.tool_calls))
-            await self._on_progress(tool_hint, tool_hint=True)
+            # Only send tool hint for sequential-thinking when send_tool_hints=False
+            # Other tools are skipped
+            send_hints = (
+                getattr(self._loop.channels_config, "send_tool_hints", False)
+                if self._loop.channels_config
+                else False
+            )
+            if send_hints:
+                tool_hint = self._loop._strip_think(self._loop._tool_hint(context.tool_calls))
+                await self._on_progress(tool_hint, tool_hint=True)
+            else:
+                # Only show hint for sequential-thinking MCP tools
+                sequential_thinking_tools = [
+                    tc for tc in context.tool_calls if "sequentialthinking" in tc.name.lower()
+                ]
+                if sequential_thinking_tools:
+                    tool_hint = self._loop._strip_think(
+                        self._loop._tool_hint(sequential_thinking_tools)
+                    )
+                    if tool_hint:
+                        await self._on_progress(tool_hint, tool_hint=True)
         for tc in context.tool_calls:
             args_str = json.dumps(tc.arguments, ensure_ascii=False)
             logger.info("Tool call: {}({})", tc.name, args_str[:200])
