@@ -110,7 +110,7 @@ class _LoopHook(AgentHook):
             else:
                 # Only show hint for sequential-thinking MCP tools
                 sequential_thinking_tools = [
-                    tc for tc in context.tool_calls if "sequentialthinking" in tc.name.lower()
+                    tc for tc in context.tool_calls if "sequential-thinking" in tc.name.lower()
                 ]
                 if sequential_thinking_tools:
                     tool_hint = self._loop._strip_think(
