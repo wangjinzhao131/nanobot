@@ -16,6 +16,10 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
+license-files = [
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+]
 
 dependencies = [
     "typer>=0.20.0,<1.0.0",
@@ -130,6 +134,8 @@ include = [
     "bridge/",
     "README.md",
     "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "pyproject.toml",
 ]
 
 [tool.ruff]

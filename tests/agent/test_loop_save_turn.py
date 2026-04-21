@@ -45,24 +45,16 @@ def test_save_turn_keeps_image_placeholder_with_path_after_runtime_strip() -> No
 
     loop._save_turn(
         session,
-        [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": runtime},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": "data:image/png;base64,abc"},
-                        "_meta": {"path": "/media/feishu/photo.jpg"},
-                    },
-                ],
-            }
-        ],
+        [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": runtime},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}, "_meta": {"path": "/media/feishu/photo.jpg"}},
+            ],
+        }],
         skip=0,
     )
-    assert session.messages[0]["content"] == [
-        {"type": "text", "text": "[image: /media/feishu/photo.jpg]"}
-    ]
+    assert session.messages[0]["content"] == [{"type": "text", "text": "[image: /media/feishu/photo.jpg]"}]
 
 
 def test_save_turn_keeps_image_placeholder_without_meta() -> None:
@@ -72,15 +64,13 @@ def test_save_turn_keeps_image_placeholder_without_meta() -> None:
 
     loop._save_turn(
         session,
-        [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": runtime},
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
-                ],
-            }
-        ],
+        [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": runtime},
+                {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+            ],
+        }],
         skip=0,
     )
     assert session.messages[0]["content"] == [{"type": "text", "text": "[image]"}]
@@ -245,24 +235,20 @@ async def test_process_message_persists_user_message_before_turn_completes(tmp_p
 
 
 @pytest.mark.asyncio
-async def test_process_message_does_not_duplicate_early_persisted_user_message(
-    tmp_path: Path,
-) -> None:
+async def test_process_message_does_not_duplicate_early_persisted_user_message(tmp_path: Path) -> None:
     loop = _make_full_loop(tmp_path)
     loop.consolidator.maybe_consolidate_by_tokens = AsyncMock(return_value=False)  # type: ignore[method-assign]
-    loop._run_agent_loop = AsyncMock(
-        return_value=(
-            "done",
-            None,
-            [
-                {"role": "system", "content": "system"},
-                {"role": "user", "content": "hello"},
-                {"role": "assistant", "content": "done"},
-            ],
-            "stop",
-            False,
-        )
-    )  # type: ignore[method-assign]
+    loop._run_agent_loop = AsyncMock(return_value=(
+        "done",
+        None,
+        [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "done"},
+        ],
+        "stop",
+        False,
+    ))  # type: ignore[method-assign]
 
     result = await loop._process_message(
         InboundMessage(channel="feishu", sender_id="u1", chat_id="c2", content="hello")
@@ -271,7 +257,10 @@ async def test_process_message_does_not_duplicate_early_persisted_user_message(
     assert result is not None
     assert result.content == "done"
     session = loop.sessions.get_or_create("feishu:c2")
-    assert [{k: v for k, v in m.items() if k in {"role", "content"}} for m in session.messages] == [
+    assert [
+        {k: v for k, v in m.items() if k in {"role", "content"}}
+        for m in session.messages
+    ] == [
         {"role": "user", "content": "hello"},
         {"role": "assistant", "content": "done"},
     ]
@@ -279,38 +268,29 @@ async def test_process_message_does_not_duplicate_early_persisted_user_message(
 
 
 @pytest.mark.asyncio
-async def test_next_turn_after_crash_closes_pending_user_turn_before_new_input(
-    tmp_path: Path,
-) -> None:
+async def test_next_turn_after_crash_closes_pending_user_turn_before_new_input(tmp_path: Path) -> None:
     loop = _make_full_loop(tmp_path)
     loop.consolidator.maybe_consolidate_by_tokens = AsyncMock(return_value=False)  # type: ignore[method-assign]
-    loop.provider.chat_with_retry = AsyncMock(
-        return_value=MagicMock()
-    )  # unused because _run_agent_loop is stubbed
+    loop.provider.chat_with_retry = AsyncMock(return_value=MagicMock())  # unused because _run_agent_loop is stubbed
 
     session = loop.sessions.get_or_create("feishu:c3")
     session.add_message("user", "old question")
     session.metadata[AgentLoop._PENDING_USER_TURN_KEY] = True
     loop.sessions.save(session)
 
-    loop._run_agent_loop = AsyncMock(
-        return_value=(
-            "new answer",
-            None,
-            [
-                {"role": "system", "content": "system"},
-                {"role": "user", "content": "old question"},
-                {
-                    "role": "assistant",
-                    "content": "Error: Task interrupted before a response was generated.",
-                },
-                {"role": "user", "content": "new question"},
-                {"role": "assistant", "content": "new answer"},
-            ],
-            "stop",
-            False,
-        )
-    )  # type: ignore[method-assign]
+    loop._run_agent_loop = AsyncMock(return_value=(
+        "new answer",
+        None,
+        [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "old question"},
+            {"role": "assistant", "content": "Error: Task interrupted before a response was generated."},
+            {"role": "user", "content": "new question"},
+            {"role": "assistant", "content": "new answer"},
+        ],
+        "stop",
+        False,
+    ))  # type: ignore[method-assign]
 
     result = await loop._process_message(
         InboundMessage(channel="feishu", sender_id="u1", chat_id="c3", content="new question")
@@ -319,12 +299,12 @@ async def test_next_turn_after_crash_closes_pending_user_turn_before_new_input(
     assert result is not None
     assert result.content == "new answer"
     session = loop.sessions.get_or_create("feishu:c3")
-    assert [{k: v for k, v in m.items() if k in {"role", "content"}} for m in session.messages] == [
+    assert [
+        {k: v for k, v in m.items() if k in {"role", "content"}}
+        for m in session.messages
+    ] == [
         {"role": "user", "content": "old question"},
-        {
-            "role": "assistant",
-            "content": "Error: Task interrupted before a response was generated.",
-        },
+        {"role": "assistant", "content": "Error: Task interrupted before a response was generated."},
         {"role": "user", "content": "new question"},
         {"role": "assistant", "content": "new answer"},
     ]
@@ -384,17 +364,13 @@ async def test_stop_preserves_runtime_checkpoint_for_next_turn(tmp_path: Path) -
 
     loop._run_agent_loop = interrupted_run_agent_loop  # type: ignore[method-assign]
 
-    first_msg = InboundMessage(
-        channel="feishu", sender_id="u1", chat_id="c4", content="keep progress"
-    )
+    first_msg = InboundMessage(channel="feishu", sender_id="u1", chat_id="c4", content="keep progress")
     task = asyncio.create_task(loop._process_message(first_msg))
     loop._active_tasks[first_msg.session_key] = [task]
     await asyncio.wait_for(checkpoint_saved.wait(), timeout=1.0)
 
     stop_msg = InboundMessage(channel="feishu", sender_id="u1", chat_id="c4", content="/stop")
-    stop_ctx = CommandContext(
-        msg=stop_msg, session=None, key=stop_msg.session_key, raw="/stop", loop=loop
-    )
+    stop_ctx = CommandContext(msg=stop_msg, session=None, key=stop_msg.session_key, raw="/stop", loop=loop)
     stop_result = await cmd_stop(stop_ctx)
 
     assert "Stopped 1 task" in stop_result.content
@@ -443,34 +419,160 @@ async def test_stop_preserves_runtime_checkpoint_for_next_turn(tmp_path: Path) -
     assert AgentLoop._RUNTIME_CHECKPOINT_KEY not in session.metadata
 
 
-def test_cross_channel_message_persisted_in_target_session(tmp_path: Path) -> None:
+@pytest.mark.asyncio
+async def test_system_subagent_followup_is_persisted_before_prompt_assembly(tmp_path: Path) -> None:
     loop = _make_full_loop(tmp_path)
-    source_key = "websocket:ws-uuid-123"
-    target_key = "feishu:ou_abc123"
+    loop.consolidator.maybe_consolidate_by_tokens = AsyncMock(return_value=False)  # type: ignore[method-assign]
 
-    # Pre-create the target session (simulate an existing feishu conversation)
-    target_session = loop.sessions.get_or_create(target_key)
-    target_session.add_message("user", "hello from feishu")
-    loop.sessions.save(target_session)
+    session = loop.sessions.get_or_create("cli:test")
+    session.add_message("user", "question")
+    session.add_message("assistant", "working")
+    loop.sessions.save(session)
 
-    source_session = loop.sessions.get_or_create(source_key)
-    msgs = _cross_channel_messages()
-    loop._save_turn(source_session, msgs, skip=1)  # skip user message
+    seen: dict[str, list[dict]] = {}
 
-    # Source session has its own messages
-    source_session = loop.sessions.get_or_create(source_key)
-    assert len(source_session.messages) == 2  # original user + assistant with tool_calls
+    async def fake_run_agent_loop(initial_messages, **_kwargs):
+        seen["initial_messages"] = initial_messages
+        return (
+            "done",
+            [],
+            [*initial_messages, {"role": "assistant", "content": "done"}],
+            "stop",
+            False,
+        )
 
-    # Target session has the cross-channel message appended
-    target = loop.sessions.get_or_create(target_key)
-    assert len(target.messages) == 2  # original + cross-channel
+    loop._run_agent_loop = fake_run_agent_loop  # type: ignore[method-assign]
 
-    history = target.get_history()
+    await loop._process_message(
+        InboundMessage(
+            channel="system",
+            sender_id="subagent",
+            chat_id="cli:test",
+            content="subagent result",
+            metadata={"subagent_task_id": "sub-1"},
+        )
+    )
 
-    # Find the annotated message
-    annotated = [m for m in history if "cron:daily-report" in m.get("content", "")]
-    assert len(annotated) == 1
-    assert annotated[0]["content"] == "[Sent from cron:daily-report] Daily report ready"
-    # Internal metadata keys should NOT leak into the history output
-    assert "_cross_channel" not in annotated[0]
-    assert "_source_session" not in annotated[0]
+    non_system = [m for m in seen["initial_messages"] if m.get("role") != "system"]
+    assert [m["content"] for m in non_system[:2]] == ["question", "working"]
+    assert non_system[2]["content"].count("subagent result") == 1
+    assert "Current Time:" in non_system[2]["content"]
+
+    loop.sessions.invalidate("cli:test")
+    persisted = loop.sessions.get_or_create("cli:test")
+    assert [
+        {k: v for k, v in m.items() if k in {"role", "content", "injected_event", "subagent_task_id"}}
+        for m in persisted.messages
+    ] == [
+        {"role": "user", "content": "question"},
+        {"role": "assistant", "content": "working"},
+        {
+            "role": "assistant",
+            "content": "subagent result",
+            "injected_event": "subagent_result",
+            "subagent_task_id": "sub-1",
+        },
+        {"role": "assistant", "content": "done"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_multiple_subagent_followups_all_persist_as_standalone_history(tmp_path: Path) -> None:
+    loop = _make_full_loop(tmp_path)
+    loop.consolidator.maybe_consolidate_by_tokens = AsyncMock(return_value=False)  # type: ignore[method-assign]
+
+    async def fake_run_agent_loop(initial_messages, **_kwargs):
+        return (
+            "ack",
+            [],
+            [*initial_messages, {"role": "assistant", "content": "ack"}],
+            "stop",
+            False,
+        )
+
+    loop._run_agent_loop = fake_run_agent_loop  # type: ignore[method-assign]
+
+    for idx in range(3):
+        await loop._process_message(
+            InboundMessage(
+                channel="system",
+                sender_id="subagent",
+                chat_id="cli:multi",
+                content=f"subagent result {idx}",
+                metadata={"subagent_task_id": f"sub-{idx}"},
+            )
+        )
+
+    loop.sessions.invalidate("cli:multi")
+    persisted = loop.sessions.get_or_create("cli:multi")
+    followups = [m for m in persisted.messages if m.get("injected_event") == "subagent_result"]
+    assert [m["content"] for m in followups] == [
+        "subagent result 0",
+        "subagent result 1",
+        "subagent result 2",
+    ]
+
+
+def test_prompt_merge_does_not_replace_standalone_subagent_history_entry(tmp_path: Path) -> None:
+    loop = _mk_loop()
+    session = Session(key="cli:merge")
+    session.add_message("assistant", "previous assistant")
+
+    inserted = loop._persist_subagent_followup(
+        session,
+        InboundMessage(
+            channel="system",
+            sender_id="subagent",
+            chat_id="cli:merge",
+            content="subagent result",
+            metadata={"subagent_task_id": "sub-1"},
+        ),
+    )
+
+    assert inserted is True
+
+    builder = ContextBuilder(tmp_path)
+    projected = builder.build_messages(
+        history=session.get_history(max_messages=0),
+        current_message="",
+        current_role="assistant",
+        channel="cli",
+        chat_id="merge",
+    )
+
+    non_system = [m for m in projected if m.get("role") != "system"]
+    assert len(non_system) == 2
+    assert "subagent result" in non_system[-1]["content"]
+    assert session.messages[-1]["content"] == "subagent result"
+    assert session.messages[-1]["injected_event"] == "subagent_result"
+
+
+def test_subagent_followup_dedupes_by_task_id() -> None:
+    loop = _mk_loop()
+    session = Session(key="cli:dedupe")
+    msg = InboundMessage(
+        channel="system",
+        sender_id="subagent",
+        chat_id="cli:dedupe",
+        content="subagent result",
+        metadata={"subagent_task_id": "sub-1"},
+    )
+
+    assert loop._persist_subagent_followup(session, msg) is True
+    assert loop._persist_subagent_followup(session, msg) is False
+    assert len(session.messages) == 1
+
+
+def test_subagent_followup_skips_empty_content() -> None:
+    loop = _mk_loop()
+    session = Session(key="cli:empty")
+    msg = InboundMessage(
+        channel="system",
+        sender_id="subagent",
+        chat_id="cli:empty",
+        content="",
+        metadata={"subagent_task_id": "sub-empty"},
+    )
+
+    assert loop._persist_subagent_followup(session, msg) is False
+    assert session.messages == []
