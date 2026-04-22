@@ -1336,9 +1336,7 @@ class FeishuChannel(BaseChannel):
                     "Streaming card {} final update failed, falling back to regular card",
                     buf.card_id,
                 )
-            for chunk in self._split_elements_by_table_limit(
-                self._build_card_elements(buf.text)
-            ):
+            for chunk in self._split_elements_by_table_limit(self._build_card_elements(buf.text)):
                 card = json.dumps(
                     {"config": {"wide_screen_mode": True}, "elements": chunk},
                     ensure_ascii=False,
@@ -1405,9 +1403,12 @@ class FeishuChannel(BaseChannel):
                 # No active streaming card — send as a regular
                 # interactive card with the same 🔧 prefix style.
                 card = json.dumps(
-                    {"config": {"wide_screen_mode": True}, "elements": [
-                        {"tag": "markdown", "content": self._format_tool_hint_delta(hint)},
-                    ]},
+                    {
+                        "config": {"wide_screen_mode": True},
+                        "elements": [
+                            {"tag": "markdown", "content": self._format_tool_hint_delta(hint)},
+                        ],
+                    },
                     ensure_ascii=False,
                 )
                 await loop.run_in_executor(
@@ -1709,8 +1710,17 @@ class FeishuChannel(BaseChannel):
         return "\n".join(part for part in parts if part)
 
     def _format_tool_hint_delta(self, tool_hint: str) -> str:
-        """Format a tool hint string with the 🔧 prefix for each line."""
+        """Format a tool hint string with the 🔧 prefix for each line.
+
+        Only the first line gets the prefix; subsequent lines are kept as-is
+        to avoid redundant repetition for multi-line tool outputs.
+        """
         lines = self.__class__._format_tool_hint_lines(tool_hint).split("\n")
-        return "\n".join(
-            f"{self.config.tool_hint_prefix} {ln}" for ln in lines if ln.strip()
-        )
+        result_lines = []
+        for i, ln in enumerate(lines):
+            if ln.strip():
+                if i == 0:
+                    result_lines.append(f"{self.config.tool_hint_prefix} {ln}")
+                else:
+                    result_lines.append(ln)
+        return "\n".join(result_lines)
